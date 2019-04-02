@@ -5,10 +5,6 @@ extern crate log;
 #[cfg(target_os = "windows")]
 extern crate winapi;
 #[cfg(target_os = "windows")]
-extern crate kernel32;
-#[cfg(target_os = "windows")]
-extern crate user32;
-#[cfg(target_os = "windows")]
 extern crate libc;
 #[cfg(target_os = "linux")]
 extern crate gtk;

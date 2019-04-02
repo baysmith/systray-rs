@@ -13,10 +13,8 @@ keywords = ["gui"]
 log= "0.4.1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-winapi= "0.2.0"
-user32-sys= "0.2.0"
-kernel32-sys= "0.2.2"
-libc= "0.2.40"
+winapi= {version="0.3.*", features=["basetsd","errhandlingapi","guiddef","libloaderapi","userenv","shellapi","windef","winuser"]}
+libc= "0.2.*"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk= "0.4.0"
