@@ -22,9 +22,10 @@ use winapi::um::winuser::{
     LookupIconIdFromDirectoryEx, PostMessageW, PostQuitMessage, RegisterClassW,
     SetForegroundWindow, SetMenuInfo, TrackPopupMenu, TranslateMessage, CW_USEDEFAULT,
     IDI_APPLICATION, IMAGE_ICON, LR_DEFAULTCOLOR, LR_LOADFROMFILE, MENUINFO, MENUITEMINFOW,
-    MFT_SEPARATOR, MFT_STRING, MIIM_FTYPE, MIIM_ID, MIIM_STATE, MIIM_STRING, MIM_APPLYTOSUBMENUS,
-    MIM_STYLE, MNS_NOTIFYBYPOS, MSG, TPM_BOTTOMALIGN, TPM_LEFTALIGN, WM_DESTROY, WM_LBUTTONUP,
-    WM_MENUCOMMAND, WM_QUIT, WM_RBUTTONUP, WM_USER, WNDCLASSW, WS_OVERLAPPEDWINDOW,
+    MFT_SEPARATOR, MFT_STRING, MIIM_FTYPE, MIIM_ID, MIIM_STATE, MIIM_STRING, MIIM_SUBMENU,
+    MIM_APPLYTOSUBMENUS, MIM_STYLE, MNS_NOTIFYBYPOS, MSG, TPM_BOTTOMALIGN, TPM_LEFTALIGN,
+    WM_DESTROY, WM_LBUTTONUP, WM_MENUCOMMAND, WM_QUIT, WM_RBUTTONUP, WM_USER, WNDCLASSW,
+    WS_OVERLAPPEDWINDOW,
 };
 use {SystrayError, SystrayEvent};
 
@@ -70,12 +71,18 @@ unsafe extern "system" fn window_proc(
             let stash = stash.borrow();
             let stash = stash.as_ref();
             if let Some(stash) = stash {
-                let menu_id = GetMenuItemID(stash.info.hmenu, w_param as i32) as i32;
-                if menu_id != -1 {
+                let hmenu = if l_param == stash.info.hmenu as isize {
+                    0
+                } else {
+                    l_param
+                };
+                let item_id = GetMenuItemID(l_param as HMENU, w_param as i32) as i32;
+                if item_id != -1 {
                     stash
                         .tx
                         .send(SystrayEvent {
-                            menu_index: menu_id as u32,
+                            menu_id: hmenu as u64,
+                            item_id: item_id as u32,
                         })
                         .ok();
                 }
@@ -83,40 +90,38 @@ unsafe extern "system" fn window_proc(
         });
     }
 
-    if msg == WM_USER + 1 {
-        if l_param as UINT == WM_LBUTTONUP || l_param as UINT == WM_RBUTTONUP {
-            let mut p = POINT { x: 0, y: 0 };
-            if GetCursorPos(&mut p as *mut POINT) == 0 {
-                return 1;
-            }
-            SetForegroundWindow(h_wnd);
-            WININFO_STASH.with(|stash| {
-                let stash = stash.borrow();
-                let stash = stash.as_ref();
-                if let Some(stash) = stash {
-                    TrackPopupMenu(
-                        stash.info.hmenu,
-                        0,
-                        p.x,
-                        p.y,
-                        (TPM_BOTTOMALIGN | TPM_LEFTALIGN) as i32,
-                        h_wnd,
-                        std::ptr::null_mut(),
-                    );
-                }
-            });
+    if msg == WM_USER + 1 && (l_param as UINT == WM_LBUTTONUP || l_param as UINT == WM_RBUTTONUP) {
+        let mut p = POINT { x: 0, y: 0 };
+        if GetCursorPos(&mut p as *mut POINT) == 0 {
+            return 1;
         }
+        SetForegroundWindow(h_wnd);
+        WININFO_STASH.with(|stash| {
+            let stash = stash.borrow();
+            let stash = stash.as_ref();
+            if let Some(stash) = stash {
+                TrackPopupMenu(
+                    stash.info.hmenu,
+                    0,
+                    p.x,
+                    p.y,
+                    (TPM_BOTTOMALIGN | TPM_LEFTALIGN) as i32,
+                    h_wnd,
+                    std::ptr::null_mut(),
+                );
+            }
+        });
     }
     if msg == WM_DESTROY {
         PostQuitMessage(0);
     }
-    return DefWindowProcW(h_wnd, msg, w_param, l_param);
+    DefWindowProcW(h_wnd, msg, w_param, l_param)
 }
 
-fn get_nid_struct(hwnd: &HWND) -> NOTIFYICONDATAW {
+fn get_nid_struct(hwnd: HWND) -> NOTIFYICONDATAW {
     NOTIFYICONDATAW {
         cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as DWORD,
-        hWnd: *hwnd,
+        hWnd: hwnd,
         uID: 0x1 as UINT,
         uFlags: 0 as UINT,
         uCallbackMessage: 0 as UINT,
@@ -187,10 +192,10 @@ unsafe fn init_window() -> Result<WindowInfo, SystrayError> {
         0 as HINSTANCE,
         std::ptr::null_mut(),
     );
-    if hwnd == std::ptr::null_mut() {
+    if hwnd.is_null() {
         return Err(get_win_os_error("Error creating window"));
     }
-    let mut nid = get_nid_struct(&hwnd);
+    let mut nid = get_nid_struct(hwnd);
     nid.uID = 0x1;
     nid.uFlags = NIF_MESSAGE;
     nid.uCallbackMessage = WM_USER + 1;
@@ -213,9 +218,9 @@ unsafe fn init_window() -> Result<WindowInfo, SystrayError> {
     }
 
     Ok(WindowInfo {
-        hwnd: hwnd,
-        hmenu: hmenu,
-        hinstance: hinstance,
+        hwnd,
+        hmenu,
+        hinstance,
     })
 }
 
@@ -235,8 +240,8 @@ unsafe fn run_loop() {
         if msg.message == WM_QUIT {
             break;
         }
-        TranslateMessage(&mut msg);
-        DispatchMessageW(&mut msg);
+        TranslateMessage(&msg);
+        DispatchMessageW(&msg);
     }
     debug!("Leaving windows run loop");
 }
@@ -281,7 +286,7 @@ impl Window {
             }
         };
         let w = Window {
-            info: info,
+            info,
             windows_loop: Some(windows_loop),
         };
         Ok(w)
@@ -296,15 +301,13 @@ impl Window {
         }
     }
 
-    pub fn set_tooltip(&self, tooltip: &String) -> Result<(), SystrayError> {
+    pub fn set_tooltip(&self, tooltip: &str) -> Result<(), SystrayError> {
         // Add Tooltip
         debug!("Setting tooltip to {}", tooltip);
-        // Gross way to convert String to [i8; 128]
-        // TODO: Clean up conversion, test for length so we don't panic at runtime
-        let tt = tooltip.as_bytes().clone();
-        let mut nid = get_nid_struct(&self.info.hwnd);
-        for i in 0..tt.len() {
-            nid.szTip[i] = tt[i] as u16;
+        let tt = to_wstring(tooltip);
+        let mut nid = get_nid_struct(self.info.hwnd);
+        for (i,c) in tt.iter().take(128).enumerate() {
+            nid.szTip[i] = *c;
         }
         nid.uFlags = NIF_TIP;
         unsafe {
@@ -315,27 +318,85 @@ impl Window {
         Ok(())
     }
 
-    pub fn add_menu_entry(&self, item_idx: u32, item_name: &String) -> Result<(), SystrayError> {
+    pub fn add_submenu_entry(
+        &self,
+        submenu: u64,
+        menu_idx: u32,
+        item_idx: u32,
+        item_name: &str,
+    ) -> Result<(), SystrayError> {
         let mut st = to_wstring(item_name);
         let mut item = get_menu_item_struct();
         item.fMask = MIIM_FTYPE | MIIM_STRING | MIIM_ID | MIIM_STATE;
         item.fType = MFT_STRING;
-        item.wID = item_idx;
+        item.wID = menu_idx;
         item.dwTypeData = st.as_mut_ptr();
         item.cch = (item_name.len() * 2) as u32;
+        let hmenu = if submenu == 0 {
+            self.info.hmenu
+        } else {
+            submenu as HMENU
+        };
         unsafe {
-            if InsertMenuItemW(self.info.hmenu, item_idx, 1, &item as *const MENUITEMINFOW) == 0 {
+            if InsertMenuItemW(hmenu, item_idx, 1, &item as *const MENUITEMINFOW) == 0 {
                 return Err(get_win_os_error("Error inserting menu item"));
             }
         }
         Ok(())
     }
 
-    pub fn add_menu_separator(&self, item_idx: u32) -> Result<(), SystrayError> {
+    fn new_submenu(&self) -> Result<HMENU, SystrayError> {
+        let hmenu = unsafe { CreatePopupMenu() };
+        let m = MENUINFO {
+            cbSize: std::mem::size_of::<MENUINFO>() as DWORD,
+            fMask: MIM_APPLYTOSUBMENUS | MIM_STYLE,
+            dwStyle: MNS_NOTIFYBYPOS,
+            cyMax: 0 as UINT,
+            hbrBack: 0 as HBRUSH,
+            dwContextHelpID: 0 as DWORD,
+            dwMenuData: 0 as ULONG_PTR,
+        };
+        unsafe {
+            if SetMenuInfo(hmenu, &m as *const MENUINFO) == 0 {
+                return Err(get_win_os_error("Error setting up menu"));
+            }
+        }
+        Ok(hmenu)
+    }
+
+    pub fn add_submenu_group(
+        &self,
+        submenu: u64,
+        menu_idx: u32,
+        item_idx: u32,
+        item_name: &str,
+    ) -> Result<u64, SystrayError> {
+        let mut st = to_wstring(item_name);
+        let mut item = get_menu_item_struct();
+        item.fMask = MIIM_FTYPE | MIIM_SUBMENU | MIIM_ID | MIIM_STATE | MIIM_STRING;
+        item.fType = MFT_STRING;
+        item.wID = menu_idx;
+        item.hSubMenu = self.new_submenu()?;
+        item.dwTypeData = st.as_mut_ptr();
+        item.cch = (item_name.len() * 2) as u32;
+        let hmenu = if submenu == 0 {
+            self.info.hmenu
+        } else {
+            submenu as HMENU
+        };
+        unsafe {
+            if InsertMenuItemW(hmenu, item_idx, 1, &item as *const MENUITEMINFOW) == 0 {
+                return Err(get_win_os_error("Error inserting menu item"));
+            }
+        }
+        Ok(item.hSubMenu as u64)
+    }
+
+    pub fn add_menu_separator(&self, menu_idx: u32, item_idx: u32) -> Result<(), SystrayError> {
         let mut item = get_menu_item_struct();
         item.fMask = MIIM_FTYPE;
         item.fType = MFT_SEPARATOR;
-        item.wID = item_idx;
+        item.wID = menu_idx;
         unsafe {
             if InsertMenuItemW(self.info.hmenu, item_idx, 1, &item as *const MENUITEMINFOW) == 0 {
                 return Err(get_win_os_error("Error inserting separator"));
@@ -346,7 +407,7 @@ impl Window {
 
     fn set_icon(&self, icon: HICON) -> Result<(), SystrayError> {
         unsafe {
-            let mut nid = get_nid_struct(&self.info.hwnd);
+            let mut nid = get_nid_struct(self.info.hwnd);
             nid.uFlags = NIF_ICON;
             nid.hIcon = icon;
             if Shell_NotifyIconW(NIM_MODIFY, &mut nid as *mut NOTIFYICONDATAW) == 0 {
@@ -356,7 +417,7 @@ impl Window {
         Ok(())
     }
 
-    pub fn set_icon_from_resource(&self, resource_name: &String) -> Result<(), SystrayError> {
+    pub fn set_icon_from_resource(&self, resource_name: &str) -> Result<(), SystrayError> {
         let icon;
         unsafe {
             icon = LoadImageW(
@@ -374,7 +435,7 @@ impl Window {
         self.set_icon(icon)
     }
 
-    pub fn set_icon_from_file(&self, icon_file: &String) -> Result<(), SystrayError> {
+    pub fn set_icon_from_file(&self, icon_file: &str) -> Result<(), SystrayError> {
         let wstr_icon_file = to_wstring(&icon_file);
         let hicon;
         unsafe {
@@ -435,7 +496,7 @@ impl Window {
 
     pub fn shutdown(&self) -> Result<(), SystrayError> {
         unsafe {
-            let mut nid = get_nid_struct(&self.info.hwnd);
+            let mut nid = get_nid_struct(self.info.hwnd);
             nid.uFlags = NIF_ICON;
             if Shell_NotifyIconW(NIM_DELETE, &mut nid as *mut NOTIFYICONDATAW) == 0 {
                 return Err(get_win_os_error("Error deleting icon from menu"));
