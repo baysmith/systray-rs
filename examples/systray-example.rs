@@ -5,23 +5,28 @@ fn main() {
     let mut app;
     match systray::Application::new() {
         Ok(w) => app = w,
-        Err(e) => panic!("Can't create window! {}", e)
+        Err(e) => panic!("Can't create window! {}", e),
     }
-    app.set_icon_from_file(&"resources\\rust.ico".to_string()).ok();
-    app.set_tooltip(&"Whatever".to_string()).ok();
-    app.add_menu_item(0, &"Print a thing".to_string(), |_| {
+    app.set_icon_from_file("resources\\rust.ico").ok();
+    app.set_tooltip("Whatever").ok();
+    app.add_menu_item(0, "Print a thing", None, |_| {
         println!("Printing a thing!");
-    }).ok();
-    app.add_menu_item(0, &"Add Menu Item".to_string(), |window| {
-        window.add_menu_item(0, &"Interior item".to_string(), |_| {
-            println!("what");
-        }).ok();
+    })
+    .ok();
+    app.add_menu_item(0, "Add Menu Item", None, |window| {
+        window
+            .add_menu_item(0, "Interior item", None, |_| {
+                println!("what");
+            })
+            .ok();
         window.add_menu_separator(0).ok();
-    }).ok();
+    })
+    .ok();
     app.add_menu_separator(0).ok();
-    app.add_menu_item(0, &"Quit".to_string(), |window| {
+    app.add_menu_item(0, "Quit", None, |window| {
         window.quit();
-    }).ok();
+    })
+    .ok();
     println!("Waiting on message!");
     app.wait_for_message();
 }

@@ -4,28 +4,29 @@ use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::sync::mpsc::{channel, Sender};
 use std::thread;
-use winapi::ctypes::{c_ulong, c_ushort};
+use winapi::ctypes::{c_int, c_ulong, c_ushort, c_void};
 use winapi::shared::basetsd::ULONG_PTR;
 use winapi::shared::guiddef::GUID;
 use winapi::shared::minwindef::{DWORD, HINSTANCE, LPARAM, LRESULT, PBYTE, TRUE, UINT, WPARAM};
-use winapi::shared::windef::{HBITMAP, HBRUSH, HICON, HMENU, HWND, POINT};
+use winapi::shared::windef::{HBITMAP, HBRUSH, HICON, HMENU, HWND, POINT, RECT};
 use winapi::um::errhandlingapi::GetLastError;
 use winapi::um::libloaderapi::GetModuleHandleA;
 use winapi::um::shellapi::{
     Shell_NotifyIconW, NIF_ICON, NIF_MESSAGE, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_MODIFY,
     NOTIFYICONDATAW,
 };
+use winapi::um::wingdi::{CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, SelectObject};
 use winapi::um::winnt::LPCWSTR;
 use winapi::um::winuser::{
-    CreateIconFromResourceEx, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DispatchMessageW,
-    GetCursorPos, GetMenuItemID, GetMessageW, InsertMenuItemW, LoadCursorW, LoadIconW, LoadImageW,
-    LookupIconIdFromDirectoryEx, PostMessageW, PostQuitMessage, RegisterClassW,
-    SetForegroundWindow, SetMenuInfo, TrackPopupMenu, TranslateMessage, CW_USEDEFAULT,
-    IDI_APPLICATION, IMAGE_ICON, LR_DEFAULTCOLOR, LR_LOADFROMFILE, MENUINFO, MENUITEMINFOW,
-    MFT_SEPARATOR, MFT_STRING, MIIM_FTYPE, MIIM_ID, MIIM_STATE, MIIM_STRING, MIIM_SUBMENU,
-    MIM_APPLYTOSUBMENUS, MIM_STYLE, MNS_NOTIFYBYPOS, MSG, TPM_BOTTOMALIGN, TPM_LEFTALIGN,
-    WM_DESTROY, WM_LBUTTONUP, WM_MENUCOMMAND, WM_QUIT, WM_RBUTTONUP, WM_USER, WNDCLASSW,
-    WS_OVERLAPPEDWINDOW,
+    CreateIconFromResourceEx, CreatePopupMenu, CreateWindowExW, DefWindowProcW, DestroyIcon,
+    DispatchMessageW, DrawIconEx, FillRect, GetCursorPos, GetDC, GetMenuItemID, GetMessageW,
+    InsertMenuItemW, LoadCursorW, LoadIconW, LoadImageW, LookupIconIdFromDirectoryEx, PostMessageW,
+    PostQuitMessage, RegisterClassW, ReleaseDC, SetForegroundWindow, SetMenuInfo, TrackPopupMenu,
+    TranslateMessage, CW_USEDEFAULT, IDI_APPLICATION, IMAGE_ICON, LR_DEFAULTCOLOR, LR_LOADFROMFILE,
+    MENUINFO, MENUITEMINFOW, MFT_SEPARATOR, MFT_STRING, MIIM_BITMAP, MIIM_FTYPE, MIIM_ID,
+    MIIM_STATE, MIIM_STRING, MIIM_SUBMENU, MIM_APPLYTOSUBMENUS, MIM_STYLE, MNS_NOTIFYBYPOS, MSG,
+    TPM_BOTTOMALIGN, TPM_LEFTALIGN, WM_DESTROY, WM_LBUTTONUP, WM_MENUCOMMAND, WM_QUIT,
+    WM_RBUTTONUP, WM_USER, WNDCLASSW, WS_OVERLAPPEDWINDOW,
 };
 use {SystrayError, SystrayEvent};
 
@@ -306,7 +307,7 @@ impl Window {
         debug!("Setting tooltip to {}", tooltip);
         let tt = to_wstring(tooltip);
         let mut nid = get_nid_struct(self.info.hwnd);
-        for (i,c) in tt.iter().take(128).enumerate() {
+        for (i, c) in tt.iter().take(128).enumerate() {
             nid.szTip[i] = *c;
         }
         nid.uFlags = NIF_TIP;
@@ -318,12 +319,13 @@ impl Window {
         Ok(())
     }
 
-    pub fn add_submenu_entry(
+    pub fn add_menu_entry(
         &self,
         submenu: u64,
         menu_idx: u32,
         item_idx: u32,
         item_name: &str,
+        icon_file: Option<&str>,
     ) -> Result<(), SystrayError> {
         let mut st = to_wstring(item_name);
         let mut item = get_menu_item_struct();
@@ -332,6 +334,10 @@ impl Window {
         item.wID = menu_idx;
         item.dwTypeData = st.as_mut_ptr();
         item.cch = (item_name.len() * 2) as u32;
+        if let Some(icon_file) = icon_file {
+            item.fMask |= MIIM_BITMAP;
+            item.hbmpItem = self.load_icon_as_bitmap(icon_file)?;
+        }
         let hmenu = if submenu == 0 {
             self.info.hmenu
         } else {
@@ -364,12 +370,13 @@ impl Window {
         Ok(hmenu)
     }
 
-    pub fn add_submenu_group(
+    pub fn add_menu_group(
         &self,
         submenu: u64,
         menu_idx: u32,
         item_idx: u32,
         item_name: &str,
+        icon_file: Option<&str>,
     ) -> Result<u64, SystrayError> {
         let mut st = to_wstring(item_name);
         let mut item = get_menu_item_struct();
@@ -379,6 +386,10 @@ impl Window {
         item.hSubMenu = self.new_submenu()?;
         item.dwTypeData = st.as_mut_ptr();
         item.cch = (item_name.len() * 2) as u32;
+        if let Some(icon_file) = icon_file {
+            item.fMask |= MIIM_BITMAP;
+            item.hbmpItem = self.load_icon_as_bitmap(icon_file)?;
+        }
         let hmenu = if submenu == 0 {
             self.info.hmenu
         } else {
@@ -433,6 +444,65 @@ impl Window {
             }
         }
         self.set_icon(icon)
+    }
+
+    fn icon_to_bitmap(&self, hicon: HICON, size: i32) -> Result<HBITMAP, SystrayError> {
+        let hresultbmp;
+        unsafe {
+            let hdc = GetDC(std::ptr::null_mut() as HWND);
+            let hmemdc = CreateCompatibleDC(hdc);
+            let hmembmp = CreateCompatibleBitmap(hdc, size, size);
+            let horgbmp = SelectObject(hmemdc, hmembmp as *mut c_void);
+            const DI_NORMAL: UINT = 0x0003;
+            let rect = RECT {
+                left: 0,
+                top: 0,
+                right: size,
+                bottom: size,
+            };
+            let prect: *const RECT = &rect;
+            FillRect(hmemdc, prect, 16 as HBRUSH);
+
+            DrawIconEx(
+                hmemdc,
+                0,
+                0,
+                hicon,
+                size as c_int,
+                size as c_int,
+                0,
+                std::ptr::null_mut() as HBRUSH,
+                DI_NORMAL,
+            );
+
+            hresultbmp = hmembmp;
+            SelectObject(hmemdc, horgbmp);
+            DeleteDC(hmemdc);
+            ReleaseDC(std::ptr::null_mut() as HWND, hdc);
+            DestroyIcon(hicon);
+        }
+        Ok(hresultbmp)
+    }
+
+    fn load_icon_as_bitmap(&self, icon_file: &str) -> Result<HBITMAP, SystrayError> {
+        let wstr_icon_file = to_wstring(&icon_file);
+        let hbitmap;
+        const ICON_SIZE: i32 = 16;
+        unsafe {
+            let hicon = LoadImageW(
+                std::ptr::null_mut() as HINSTANCE,
+                wstr_icon_file.as_ptr(),
+                IMAGE_ICON,
+                ICON_SIZE,
+                ICON_SIZE,
+                LR_LOADFROMFILE,
+            ) as HICON;
+            if hicon == std::ptr::null_mut() as HICON {
+                return Err(get_win_os_error("Error loading icon from file"));
+            }
+            hbitmap = self.icon_to_bitmap(hicon, ICON_SIZE)?;
+        }
+        Ok(hbitmap)
     }
 
     pub fn set_icon_from_file(&self, icon_file: &str) -> Result<(), SystrayError> {

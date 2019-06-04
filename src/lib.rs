@@ -40,7 +40,7 @@ impl std::fmt::Display for SystrayError {
     }
 }
 
-#[derive (Default)]
+#[derive(Default)]
 pub struct MenuData {
     size: u32,
     callbacks: HashMap<u32, Callback>,
@@ -87,14 +87,19 @@ impl Application {
         }
     }
 
-    pub fn add_menu_group(&mut self, submenu: u64, item_name: &str) -> Result<u64, SystrayError> {
+    pub fn add_menu_group(
+        &mut self,
+        submenu: u64,
+        item_name: &str,
+        icon_file: Option<&str>,
+    ) -> Result<u64, SystrayError> {
         if !self.menu_data.contains_key(&submenu) {
             return Ok(0);
         }
         let idx = self.menu_data.get(&submenu).unwrap().size;
-        let subsubmenu = self
-            .window
-            .add_submenu_group(submenu, self.menu_idx, idx, item_name)?;
+        let subsubmenu =
+            self.window
+                .add_menu_group(submenu, self.menu_idx, idx, item_name, icon_file)?;
         self.menu_data.insert(subsubmenu, MenuData::new());
         self.menu_data.get_mut(&submenu).unwrap().size += 1;
         self.menu_idx += 1;
@@ -105,6 +110,7 @@ impl Application {
         &mut self,
         submenu: u64,
         item_name: &str,
+        icon_file: Option<&str>,
         f: F,
     ) -> Result<u32, SystrayError>
     where
@@ -115,7 +121,7 @@ impl Application {
         }
         let idx = self.menu_data.get(&submenu).unwrap().size;
         self.window
-            .add_submenu_entry(submenu, self.menu_idx, idx, item_name)?;
+            .add_menu_entry(submenu, self.menu_idx, idx, item_name, icon_file)?;
         self.menu_data
             .get_mut(&submenu)
             .unwrap()
