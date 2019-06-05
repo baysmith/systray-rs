@@ -403,13 +403,18 @@ impl Window {
         Ok(item.hSubMenu as u64)
     }
 
-    pub fn add_menu_separator(&self, menu_idx: u32, item_idx: u32) -> Result<(), SystrayError> {
+    pub fn add_menu_separator(&self, submenu: u64, menu_idx: u32, item_idx: u32) -> Result<(), SystrayError> {
         let mut item = get_menu_item_struct();
         item.fMask = MIIM_FTYPE;
         item.fType = MFT_SEPARATOR;
         item.wID = menu_idx;
+        let hmenu = if submenu == 0 {
+            self.info.hmenu
+        } else {
+            submenu as HMENU
+        };
         unsafe {
-            if InsertMenuItemW(self.info.hmenu, item_idx, 1, &item as *const MENUITEMINFOW) == 0 {
+            if InsertMenuItemW(hmenu, item_idx, 1, &item as *const MENUITEMINFOW) == 0 {
                 return Err(get_win_os_error("Error inserting separator"));
             }
         }
@@ -498,7 +503,7 @@ impl Window {
                 LR_LOADFROMFILE,
             ) as HICON;
             if hicon == std::ptr::null_mut() as HICON {
-                return Err(get_win_os_error("Error loading icon from file"));
+                return Err(get_win_os_error(&format!("Error loading icon from file {}", icon_file)));
             }
             hbitmap = self.icon_to_bitmap(hicon, ICON_SIZE)?;
         }

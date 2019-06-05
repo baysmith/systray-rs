@@ -137,7 +137,7 @@ impl Application {
             return Ok(0);
         }
         let idx = self.menu_data.get(&submenu).unwrap().size;
-        if let Err(e) = self.window.add_menu_separator(self.menu_idx, idx) {
+        if let Err(e) = self.window.add_menu_separator(submenu, self.menu_idx, idx) {
             return Err(e);
         }
         self.menu_data.get_mut(&submenu).unwrap().size += 1;
