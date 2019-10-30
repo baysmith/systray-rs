@@ -1,4 +1,4 @@
-use crate::{SystrayError, SystrayEvent, Icon};
+use crate::{Icon, SystrayError, SystrayEvent};
 use std;
 use std::cell::RefCell;
 use std::ffi::OsStr;
@@ -343,11 +343,11 @@ impl Window {
                 Icon::File(icon_file) => {
                     item.fMask |= MIIM_BITMAP;
                     item.hbmpItem = self.load_icon_as_bitmap(icon_file.as_str())?;
-                },
+                }
                 Icon::Handle(hicon) => {
                     item.fMask |= MIIM_BITMAP;
                     item.hbmpItem = self.icon_to_bitmap(hicon, ICON_SIZE)?;
-                },
+                }
             }
         }
         let hmenu = if submenu == 0 {
@@ -403,11 +403,11 @@ impl Window {
                 Icon::File(icon_file) => {
                     item.fMask |= MIIM_BITMAP;
                     item.hbmpItem = self.load_icon_as_bitmap(icon_file.as_str())?;
-                },
+                }
                 Icon::Handle(hicon) => {
                     item.fMask |= MIIM_BITMAP;
                     item.hbmpItem = self.icon_to_bitmap(hicon, ICON_SIZE)?;
-                },
+                }
             }
         }
         let hmenu = if submenu == 0 {
