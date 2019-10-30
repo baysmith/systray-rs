@@ -54,6 +54,11 @@ impl MenuData {
     }
 }
 
+pub enum Icon {
+    File(String),
+    Handle(api::api::IconHandle),
+}
+
 pub struct Application {
     window: api::api::Window,
     menu_idx: u32,
@@ -93,7 +98,7 @@ impl Application {
         &mut self,
         submenu: u64,
         item_name: &str,
-        icon_file: Option<&str>,
+        icon: Option<Icon>,
     ) -> Result<u64, SystrayError> {
         if !self.menu_data.contains_key(&submenu) {
             return Ok(0);
@@ -101,7 +106,7 @@ impl Application {
         let idx = self.menu_data.get(&submenu).unwrap().size;
         let subsubmenu =
             self.window
-                .add_menu_group(submenu, self.menu_idx, idx, item_name, icon_file)?;
+                .add_menu_group(submenu, self.menu_idx, idx, item_name, icon)?;
         self.menu_data.insert(subsubmenu, MenuData::new());
         self.menu_data.get_mut(&submenu).unwrap().size += 1;
         self.menu_idx += 1;
@@ -112,7 +117,7 @@ impl Application {
         &mut self,
         submenu: u64,
         item_name: &str,
-        icon_file: Option<&str>,
+        icon: Option<Icon>,
         f: F,
     ) -> Result<u32, SystrayError>
     where
@@ -123,7 +128,7 @@ impl Application {
         }
         let idx = self.menu_data.get(&submenu).unwrap().size;
         self.window
-            .add_menu_entry(submenu, self.menu_idx, idx, item_name, icon_file)?;
+            .add_menu_entry(submenu, self.menu_idx, idx, item_name, icon)?;
         self.menu_data
             .get_mut(&submenu)
             .unwrap()

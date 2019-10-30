@@ -1,4 +1,4 @@
-use crate::{SystrayError, SystrayEvent};
+use crate::{SystrayError, SystrayEvent, Icon};
 use std;
 use std::cell::RefCell;
 use std::ffi::OsStr;
@@ -40,6 +40,10 @@ fn to_wstring(str: &str) -> Vec<u16> {
         .chain(Some(0).into_iter())
         .collect::<Vec<_>>()
 }
+
+const ICON_SIZE: i32 = 16;
+
+pub type IconHandle = HICON;
 
 #[derive(Clone)]
 struct WindowInfo {
@@ -325,7 +329,7 @@ impl Window {
         menu_idx: u32,
         item_idx: u32,
         item_name: &str,
-        icon_file: Option<&str>,
+        icon: Option<Icon>,
     ) -> Result<(), SystrayError> {
         let mut st = to_wstring(item_name);
         let mut item = get_menu_item_struct();
@@ -334,9 +338,17 @@ impl Window {
         item.wID = menu_idx;
         item.dwTypeData = st.as_mut_ptr();
         item.cch = (item_name.len() * 2) as u32;
-        if let Some(icon_file) = icon_file {
-            item.fMask |= MIIM_BITMAP;
-            item.hbmpItem = self.load_icon_as_bitmap(icon_file)?;
+        if let Some(icon) = icon {
+            match icon {
+                Icon::File(icon_file) => {
+                    item.fMask |= MIIM_BITMAP;
+                    item.hbmpItem = self.load_icon_as_bitmap(icon_file.as_str())?;
+                },
+                Icon::Handle(hicon) => {
+                    item.fMask |= MIIM_BITMAP;
+                    item.hbmpItem = self.icon_to_bitmap(hicon, ICON_SIZE)?;
+                },
+            }
         }
         let hmenu = if submenu == 0 {
             self.info.hmenu
@@ -376,7 +388,7 @@ impl Window {
         menu_idx: u32,
         item_idx: u32,
         item_name: &str,
-        icon_file: Option<&str>,
+        icon: Option<Icon>,
     ) -> Result<u64, SystrayError> {
         let mut st = to_wstring(item_name);
         let mut item = get_menu_item_struct();
@@ -386,9 +398,17 @@ impl Window {
         item.hSubMenu = self.new_submenu()?;
         item.dwTypeData = st.as_mut_ptr();
         item.cch = (item_name.len() * 2) as u32;
-        if let Some(icon_file) = icon_file {
-            item.fMask |= MIIM_BITMAP;
-            item.hbmpItem = self.load_icon_as_bitmap(icon_file)?;
+        if let Some(icon) = icon {
+            match icon {
+                Icon::File(icon_file) => {
+                    item.fMask |= MIIM_BITMAP;
+                    item.hbmpItem = self.load_icon_as_bitmap(icon_file.as_str())?;
+                },
+                Icon::Handle(hicon) => {
+                    item.fMask |= MIIM_BITMAP;
+                    item.hbmpItem = self.icon_to_bitmap(hicon, ICON_SIZE)?;
+                },
+            }
         }
         let hmenu = if submenu == 0 {
             self.info.hmenu
@@ -497,7 +517,6 @@ impl Window {
     fn load_icon_as_bitmap(&self, icon_file: &str) -> Result<HBITMAP, SystrayError> {
         let wstr_icon_file = to_wstring(&icon_file);
         let hbitmap;
-        const ICON_SIZE: i32 = 16;
         unsafe {
             let hicon = LoadImageW(
                 std::ptr::null_mut() as HINSTANCE,
