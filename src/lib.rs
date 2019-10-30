@@ -4,7 +4,6 @@
 extern crate log;
 
 #[cfg(target_os = "linux")]
-
 extern crate glib;
 #[cfg(target_os = "linux")]
 extern crate gtk;

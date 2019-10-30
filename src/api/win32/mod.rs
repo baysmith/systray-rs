@@ -1,3 +1,4 @@
+use crate::{SystrayError, SystrayEvent};
 use std;
 use std::cell::RefCell;
 use std::ffi::OsStr;
@@ -28,7 +29,6 @@ use winapi::um::winuser::{
     TPM_BOTTOMALIGN, TPM_LEFTALIGN, WM_DESTROY, WM_LBUTTONUP, WM_MENUCOMMAND, WM_QUIT,
     WM_RBUTTONUP, WM_USER, WNDCLASSW, WS_OVERLAPPEDWINDOW,
 };
-use crate::{SystrayError, SystrayEvent};
 
 // Got this idea from glutin. Yay open source! Boo stupid winproc! Even more boo
 // doing SetLongPtr tho.
@@ -403,7 +403,12 @@ impl Window {
         Ok(item.hSubMenu as u64)
     }
 
-    pub fn add_menu_separator(&self, submenu: u64, menu_idx: u32, item_idx: u32) -> Result<(), SystrayError> {
+    pub fn add_menu_separator(
+        &self,
+        submenu: u64,
+        menu_idx: u32,
+        item_idx: u32,
+    ) -> Result<(), SystrayError> {
         let mut item = get_menu_item_struct();
         item.fMask = MIIM_FTYPE;
         item.fType = MFT_SEPARATOR;
@@ -503,7 +508,10 @@ impl Window {
                 LR_LOADFROMFILE,
             ) as HICON;
             if hicon == std::ptr::null_mut() as HICON {
-                return Err(get_win_os_error(&format!("Error loading icon from file {}", icon_file)));
+                return Err(get_win_os_error(&format!(
+                    "Error loading icon from file {}",
+                    icon_file
+                )));
             }
             hbitmap = self.icon_to_bitmap(hicon, ICON_SIZE)?;
         }
