@@ -28,7 +28,7 @@ use winapi::um::winuser::{
     TPM_BOTTOMALIGN, TPM_LEFTALIGN, WM_DESTROY, WM_LBUTTONUP, WM_MENUCOMMAND, WM_QUIT,
     WM_RBUTTONUP, WM_USER, WNDCLASSW, WS_OVERLAPPEDWINDOW,
 };
-use {SystrayError, SystrayEvent};
+use crate::{SystrayError, SystrayEvent};
 
 // Got this idea from glutin. Yay open source! Boo stupid winproc! Even more boo
 // doing SetLongPtr tho.

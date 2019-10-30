@@ -62,7 +62,7 @@ pub struct Application {
     rx: Receiver<SystrayEvent>,
 }
 
-type Callback = Box<(Fn(&mut Application) -> () + 'static)>;
+type Callback = Box<(dyn Fn(&mut Application) -> () + 'static)>;
 
 fn make_callback<F>(f: F) -> Callback
 where

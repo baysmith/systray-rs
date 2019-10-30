@@ -1,20 +1,21 @@
 [package]
 name = "systray"
 version = "0.3.0"
-authors = ["Kyle Machulis <kyle@machul.is>"]
+authors = ["Kyle Machulis <kyle@machul.is>", "Bradley A Smith <bradley@baysmith.com>"]
 description = "Rust library for making minimal cross-platform systray GUIs"
 license = "BSD-3-Clause"
 homepage = "http://github.com/qdot/systray-rs"
 repository = "https://github.com/qdot/systray-rs.git"
 readme = "README.md"
 keywords = ["gui"]
+edition = "2018"
 
 [dependencies]
-log= "0.4.1"
+log= "0.4"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-winapi= {version="0.3.*", features=["basetsd","errhandlingapi","guiddef","libloaderapi","userenv","shellapi","windef","winuser"]}
-libc= "0.2.*"
+winapi= {version="0.3", features=["basetsd","errhandlingapi","guiddef","libloaderapi","userenv","shellapi","windef","winuser"]}
+libc= "0.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk= "0.4.0"
